@@ -17,31 +17,36 @@ import uuid
 
 from pathlib import Path
 
-def speech_to_text(audio_file, openai_api_key): # raw_transcript 텍스트를 튜플로 return함
+# 임시 파일 업로드 경로 설정
+upload_dir = "LectureNoteAI/uploads/"
+if not os.path.exists(upload_dir):
+    os.makedirs(upload_dir)
+
+# OpenAI의 Whisper API를 사용하여 Speech가 담긴 mp3파일을 text로 변환하는 함수
+# audio_file: 오디오 파일 경로, openai_api_key: OpenAI API 키
+def speech_to_text(audio_file, openai_api_key): # 변환된 텍스트 string을 묶은 raw_transcript 튜플을 return함
 
     STT_API_KEY = openai_api_key
     client = OpenAI(api_key=STT_API_KEY)
 
     song = AudioSegment.from_mp3(audio_file)
-
-    # PyDub에서 시간은 ms단위로 카운트
-    ten_minutes = 10 * 60 * 1000
+    ten_minutes = 10 * 60 * 1000 # PyDub에서 시간은 ms단위로 카운트
     segments = []
 
-    # 파일 업로드 경로 설정
-    upload_dir = "/mnt/data/stt/"
+    # 임시 파일 업로드 경로 설정
+    upload_dir = "LectureNoteAI/stt/"
     if not os.path.exists(upload_dir):
         os.makedirs(upload_dir)
 
     # 분할된 오디오 파일 저장
     for i in range(0, len(song), ten_minutes):
         segment = song[i:i + ten_minutes]
-        segment_path = f"/mnt/data/stt/segment_{i // ten_minutes}.mp3"
+        segment_path = f"LectureNoteAI/stt/segment_{i // ten_minutes}.mp3"
         segment.export(segment_path, format="mp3")
         segments.append(segment_path)
 
     # 최종 raw_transcript를 저장할 파일 경로
-    raw_transcript_file_path = "/mnt/data/stt/raw_transcript.txt"
+    raw_transcript_file_path = "LectureNoteAI/stt/raw_transcript.txt"
 
     # 빈 파일 생성
     with open(raw_transcript_file_path, "w", encoding="utf-8") as raw_transcript_file:
@@ -67,10 +72,9 @@ def speech_to_text(audio_file, openai_api_key): # raw_transcript 텍스트를 �
             except Exception as e:
                 print(f"Error occurred: {e}")
 
-            # API 오류 방지를 위해 1초 대기
-            time.sleep(1)
+            time.sleep(1) # API 오류 방지를 위해 1초 대기
 
-    # raw_transcript 출력
+    # raw_transcript를 chunk로 나눠 tuple에 저장
     def split_txtfile(file_path, min_chunk_size=4000): # 4000자로 나눔
         with open(file_path, "r", encoding="utf-8") as txt_file:
             text = txt_file.read()
@@ -93,7 +97,8 @@ def speech_to_text(audio_file, openai_api_key): # raw_transcript 텍스트를 �
 
     return raw_transcript, "\n".join(raw_transcript)
 
-
+# Naver Clova의 OCR API를 사용하여 PDF 파일에서 txt를 추출하는 함수
+# pdf_file: pdf 파일 경로, ocr_api_key: Clova OCR API 키
 def ocr_slide_text(pdf_file, ocr_api_key): # num_pages와 page_texts(dictionary)를 튜플로 return함
     secret_key_ocr = ocr_api_key
     api_url_ocr = 'https://6pfb41u4zq.apigw.ntruss.com/custom/v1/30851/1891e1fe857cbe3bd2c4f29f5fc24ef11956164d7d5ef1135925f3d227a8b617/general'
@@ -148,45 +153,12 @@ def ocr_slide_text(pdf_file, ocr_api_key): # num_pages와 page_texts(dictionary)
                 else:
                     print(f"Error in OCR for page {page_num+1}: {response_json}")
 
-            # 이미지 파일 삭제
-            os.remove(image_path)
+            os.remove(image_path) # 이미지 파일 삭제
 
     return num_pages, page_texts
 
-# 체크박스의 상태에 따라, 텍스트를 긁어오는 방식을 위 두 가지 (ocr, extract) 중 선택한 후
-# 아래의 녹취록 다듬기 함수를 호출함
-def refine_transcript_wrapper(raw_transcript, pdf_file, use_ocr, openai_api_key, ocr_api_key):
-    if use_ocr:
-        slide_tuple = ocr_slide_text(pdf_file, ocr_api_key)
-    else:
-        slide_tuple = extract_slide_text(pdf_file)
-        
-    transcript = refine_transcript(raw_transcript, slide_tuple, openai_api_key)
-    transcript_string = ""
-    for string in transcript:
-        transcript_string += string
-    return transcript_string, transcript # 가독성 처리에 표시할 string 변수, 튜플타입의 transcript 변수
-
-def download_ocr_result(ocr_result):
-    return ocr_result
-
-
-# 파일 업로드 경로 설정
-upload_dir = "/mnt/data/uploads/"
-if not os.path.exists(upload_dir):
-    os.makedirs(upload_dir)
-
-
-def pdf_length(pdf_path):# pdf 경로 입력 시 페이지 수를 반환
-    # PDF 파일 열기
-    pdf = PdfReader(pdf_path)
-    # PDF 파일의 페이지 수 가져오기
-    num_pages = len(pdf.pages)
-    return num_pages
-
-
+# PDF 파일에서 텍스트를 추출하는 함수
 def extract_slide_text(pdf_file):
-    # PDF/PPT 파일에서 텍스트를 추출하는 함수
     pdf_reader = PdfReader(pdf_file)
     num_pages = len(pdf_reader.pages)
     page_texts = {}
@@ -197,8 +169,8 @@ def extract_slide_text(pdf_file):
 
     return num_pages, page_texts
 
-# 녹취록 다듬기
-def refine_transcript(raw_transcript, slide_tuple, openai_api_key):
+# OpenAI의 GPT API를 사용하여 제공된 raw_transcript의 오류를 바로잡고 가독성을 향상시키는 함수
+def refine_transcript(raw_transcript, slide_tuple, openai_api_key): # 정제된 transcript를 튜플로 return함
 
     #test print
     print(f"slide_tuple 원소 개수: {len(slide_tuple)}")
@@ -238,9 +210,26 @@ def refine_transcript(raw_transcript, slide_tuple, openai_api_key):
 
     return tuple(transcript)
 
+# 체크박스의 상태에 따라, 텍스트를 긁어오는 방식을 위 두 가지 (ocr, extract) 중 선택한 후
+# 아래의 녹취록 다듬기 함수를 호출함
+def refine_transcript_wrapper(raw_transcript, pdf_file, use_ocr, openai_api_key, ocr_api_key):
+    if use_ocr:
+        slide_tuple = ocr_slide_text(pdf_file, ocr_api_key)
+    else:
+        slide_tuple = extract_slide_text(pdf_file)
+        
+    transcript = refine_transcript(raw_transcript, slide_tuple, openai_api_key)
+    transcript_string = ""
+    for string in transcript:
+        transcript_string += string
+    return transcript_string, transcript # 가독성 처리에 표시할 string 변수, 튜플타입의 transcript 변수
 
-# 녹취록과 슬라이드 텍스트 매칭
-def match_transcript_and_slides(transcript, slide_tuple, openai_api_key): # string타입의 대본 # ocr_slide_text와 extract_slide text의 return 결과인 튜플타입의 slide_tuple
+def download_ocr_result(ocr_result):
+    return ocr_result
+
+# transcript와 교재(slide) 텍스트 매칭
+# transcript: string타입의 대본, slide_tuple: ocr_slide_text와 extract_slide text의 return 결과인 튜플, openai_api_key: OpenAI api key
+def match_transcript_and_slides(transcript, slide_tuple, openai_api_key): # 매칭된 텍스트 string을 묶은 tuple인 matched_text
     # nlp 사용하기 전, 튜플로 들어온 slide_tuple 형식을 nlp 프롬프트에 작성한 양식의 string으로 변환
     num_pages, page_dict = slide_tuple
     result = ""
@@ -287,9 +276,8 @@ def match_transcript_and_slides(transcript, slide_tuple, openai_api_key): # stri
 
     return tuple(matched_text)
 
-
-# 매칭된 결과 표시
-def display_matched_results(matched_text, pdf_file):
+# PDF 페이지를 이미지로 변환하고, 텍스트를 매칭하여, 강의록 문단에 적합한 페이지를 표시하는 함수
+def display_matched_results(matched_text, pdf_file): # Gradio의 이미지와 텍스트박스 component를 return
     images, textboxes = [], []
     doc = fitz.open(pdf_file)
     
@@ -320,9 +308,8 @@ def display_matched_results(matched_text, pdf_file):
 
     return images + textboxes
 
-# 매칭 수행
-def match_only(transcript, pdf_file, use_ocr, openai_api_key, ocr_api_key):
-    # 테스트용 transcript string삭제
+# 교재(slide)의 텍스트를 사용해 transcript와 슬라이드를 매치한다
+def match_only(transcript, pdf_file, use_ocr, openai_api_key, ocr_api_key): # Gradio의 이미지와 텍스트박스 componenet를 return
     if use_ocr:
         print("use ocr")
         result_tuple = ocr_slide_text(pdf_file, ocr_api_key)
@@ -335,7 +322,6 @@ def match_only(transcript, pdf_file, use_ocr, openai_api_key, ocr_api_key):
     matching_results = display_matched_results(matched_text, pdf_file)
     return matching_results + [matched_text]
 
-
 # 파일 업로드 경로 업데이트
 def update_uploaded_file(pdf_file):
     if pdf_file is not None:
@@ -344,8 +330,8 @@ def update_uploaded_file(pdf_file):
         return uploaded_file_path, uploaded_file_name
     return None, None
 
-# 다운로드
-def save_text_file(content, filename):
+# 다운로드: 텍스트를 파일에 저장하는 함수
+def save_text_file(content, filename): # 저장된 파일의 경로 return
     file_path = os.path.join(upload_dir, filename)
 
     # content가 튜플일 경우 하나의 문자열로 변환
@@ -357,8 +343,8 @@ def save_text_file(content, filename):
 
     return file_path
 
-# 다운로드
-def download_files(download_lecture_txt, download_refined_txt, download_matched_txt, raw_transcript, refined_transcript, matched_text):
+# 다운로드: 지정된 파일을 다운로드하는 함수
+def download_files(download_lecture_txt, download_refined_txt, download_matched_txt, raw_transcript, refined_transcript, matched_text): # 다운로드할 파일 경로 목록 return
     files = []
 
     # tuple일 경우 string으로 변환
@@ -379,6 +365,15 @@ def download_files(download_lecture_txt, download_refined_txt, download_matched_
         matched_file_path = save_text_file(matched_text, "문단과 매칭된 강의록.txt")
         files.append(matched_file_path)
     return files
+
+
+def pdf_length(pdf_path):# pdf 경로 입력 시 페이지 수를 반환
+    # PDF 파일 열기
+    pdf = PdfReader(pdf_path)
+    # PDF 파일의 페이지 수 가져오기
+    num_pages = len(pdf.pages)
+    return num_pages
+
 
 
 def main():
