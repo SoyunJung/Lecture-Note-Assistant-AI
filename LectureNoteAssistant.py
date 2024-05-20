@@ -17,9 +17,9 @@ import uuid
 
 from pathlib import Path
 
-def speech_to_text(audio_file): # raw_transcript 텍스트를 튜플로 return함
+def speech_to_text(audio_file, openai_api_key): # raw_transcript 텍스트를 튜플로 return함
 
-    STT_API_KEY = "" # OpenAI API KEY 입력
+    STT_API_KEY = openai_api_key
     client = OpenAI(api_key=STT_API_KEY)
 
     song = AudioSegment.from_mp3(audio_file)
@@ -94,8 +94,8 @@ def speech_to_text(audio_file): # raw_transcript 텍스트를 튜플로 return�
     return raw_transcript, "\n".join(raw_transcript)
 
 
-def ocr_slide_text(pdf_file): # num_pages와 page_texts(dictionary)를 튜플로 return함
-    secret_key_ocr = ''  # API KEY 입력
+def ocr_slide_text(pdf_file, ocr_api_key): # num_pages와 page_texts(dictionary)를 튜플로 return함
+    secret_key_ocr = ocr_api_key
     api_url_ocr = 'https://6pfb41u4zq.apigw.ntruss.com/custom/v1/30851/1891e1fe857cbe3bd2c4f29f5fc24ef11956164d7d5ef1135925f3d227a8b617/general'
     
     # PDF 파일 열기
@@ -155,13 +155,13 @@ def ocr_slide_text(pdf_file): # num_pages와 page_texts(dictionary)를 튜플로
 
 # 체크박스의 상태에 따라, 텍스트를 긁어오는 방식을 위 두 가지 (ocr, extract) 중 선택한 후
 # 아래의 녹취록 다듬기 함수를 호출함
-def refine_transcript_wrapper(raw_transcript, pdf_file, use_ocr):
+def refine_transcript_wrapper(raw_transcript, pdf_file, use_ocr, openai_api_key, ocr_api_key):
     if use_ocr:
-        slide_tuple = ocr_slide_text(pdf_file)
+        slide_tuple = ocr_slide_text(pdf_file, ocr_api_key)
     else:
         slide_tuple = extract_slide_text(pdf_file)
         
-    transcript = refine_transcript(raw_transcript, slide_tuple)
+    transcript = refine_transcript(raw_transcript, slide_tuple, openai_api_key)
     transcript_string = ""
     for string in transcript:
         transcript_string += string
@@ -198,7 +198,7 @@ def extract_slide_text(pdf_file):
     return num_pages, page_texts
 
 # 녹취록 다듬기
-def refine_transcript(raw_transcript, slide_tuple):
+def refine_transcript(raw_transcript, slide_tuple, openai_api_key):
 
     #test print
     print(f"slide_tuple 원소 개수: {len(slide_tuple)}")
@@ -212,7 +212,7 @@ def refine_transcript(raw_transcript, slide_tuple):
             result += f"({page_num}page)\n{page_text}\n\n"
     slide_text_converted = result.strip()
 
-    NLP_API_KEY = "" # OpenAI API KEY 입력
+    NLP_API_KEY = openai_api_key
     client = OpenAI(api_key=NLP_API_KEY)
 
     transcript = [None] * len(raw_transcript)  # 미리 크기 설정
@@ -240,7 +240,7 @@ def refine_transcript(raw_transcript, slide_tuple):
 
 
 # 녹취록과 슬라이드 텍스트 매칭
-def match_transcript_and_slides(transcript, slide_tuple): # string타입의 대본 # ocr_slide_text와 extract_slide text의 return 결과인 튜플타입의 slide_tuple
+def match_transcript_and_slides(transcript, slide_tuple, openai_api_key): # string타입의 대본 # ocr_slide_text와 extract_slide text의 return 결과인 튜플타입의 slide_tuple
     # nlp 사용하기 전, 튜플로 들어온 slide_tuple 형식을 nlp 프롬프트에 작성한 양식의 string으로 변환
     num_pages, page_dict = slide_tuple
     result = ""
@@ -250,7 +250,7 @@ def match_transcript_and_slides(transcript, slide_tuple): # string타입의 대�
             result += f"({page_num}page)\n{page_text}\n\n"
     slide_text_converted = result.strip()
 
-    NLP_API_KEY = "" # OpenAI API KEY 입력
+    NLP_API_KEY = openai_api_key
     client = OpenAI(api_key = NLP_API_KEY)
 
     matched_text = [None] * len(transcript) # 크기 설정
@@ -321,17 +321,17 @@ def display_matched_results(matched_text, pdf_file):
     return images + textboxes
 
 # 매칭 수행
-def match_only(transcript, pdf_file, use_ocr):
+def match_only(transcript, pdf_file, use_ocr, openai_api_key, ocr_api_key):
     # 테스트용 transcript string삭제
     if use_ocr:
         print("use ocr")
-        result_tuple = ocr_slide_text(pdf_file)
+        result_tuple = ocr_slide_text(pdf_file, ocr_api_key)
     else:
         print("use extract")
         result_tuple = extract_slide_text(pdf_file)
     print("\nreulst_tuple => ", result_tuple)
     print("\nmatch_only에 파라미터로 들어온 강의대본 : ", transcript)
-    matched_text = match_transcript_and_slides(transcript, result_tuple) # 반환값 : (Npage) + 띄어쓰기 한 칸 + stt내용. + \n\n
+    matched_text = match_transcript_and_slides(transcript, result_tuple, openai_api_key) # 반환값 : (Npage) + 띄어쓰기 한 칸 + stt내용. + \n\n
     matching_results = display_matched_results(matched_text, pdf_file)
     return matching_results + [matched_text]
 
@@ -383,8 +383,11 @@ def download_files(download_lecture_txt, download_refined_txt, download_matched_
 
 def main():
 
-    with gr.Blocks() as demo:
-        gr.Markdown("# Lecture Note Assistant AI")
+    with gr.Blocks() as web:
+        with gr.Row():
+            gr.Markdown("# Lecture Note Assistant AI")
+            openai_api_key = gr.Textbox(label="OpenAI API Key")
+            ocr_api_key = gr.Textbox(label="OCR API Key")
 
         with gr.Tabs() as tabs:
             # 전체 작업 수행
@@ -430,10 +433,10 @@ def main():
                 claude_output = gr.State()
 
 
-                submit_btn.click(fn=speech_to_text, inputs=audio_file, outputs=[stt_result, stt_textbox])
-                next_btn1.click(fn= refine_transcript_wrapper, inputs=[stt_result, pdf_file, use_ocr], outputs=[stt_claude_textbox, claude_output])
-                next_btn2.click(fn=match_only, inputs=[claude_output, pdf_file, use_ocr], outputs=images + textboxes + [matched_text])
-                download_btn.click(fn=download_files, inputs=[download_lecture_txt, download_refined_txt, download_matched_txt, stt_textbox, claude_output, matched_text], outputs=gr.File(label="다운로드된 파일"))
+                submit_btn.click(fn= speech_to_text, inputs=[audio_file, openai_api_key], outputs=[stt_result, stt_textbox])
+                next_btn1.click(fn= refine_transcript_wrapper, inputs=[stt_result, pdf_file, use_ocr, openai_api_key, ocr_api_key], outputs=[stt_claude_textbox, claude_output])
+                next_btn2.click(fn= match_only, inputs=[claude_output, pdf_file, use_ocr, openai_api_key, ocr_api_key], outputs=images + textboxes + [matched_text])
+                download_btn.click(fn= download_files, inputs=[download_lecture_txt, download_refined_txt, download_matched_txt, stt_textbox, claude_output, matched_text], outputs=gr.File(label="다운로드된 파일"))
 
             #only_tab 가져와서 붙여넣기
 
@@ -442,7 +445,7 @@ def main():
             """
         )
     
-    demo.launch()
+    web.launch()
 
 if __name__ == "__main__":
     main()
