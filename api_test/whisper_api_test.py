@@ -1,11 +1,11 @@
 from openai import OpenAI
 
 
-STT_API_KEY = "api key" # api key
+STT_API_KEY = "" # OpenAI API KEY
 
 client = OpenAI(api_key = STT_API_KEY)
 
-audio_file_path = "audio file directory" # directory
+audio_file_path = "C:/Users/SOYUN/Desktop/whisper_test/audio.mp3"
 audio_file = open(audio_file_path, "rb")
 
 transcript = client.audio.transcriptions.create(
