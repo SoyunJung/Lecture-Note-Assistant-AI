@@ -22,7 +22,7 @@ message = client.messages.create(
 이외의 모든 잡담은 첨언하지 마십시오.
 인삿말, 대답 모두 금지합니다. 오로지 내용만 제공하십시오.""",
     messages=[
-        {"role": "user", "content": "hi"}
+        {"role": "user", "content": ""} # content
     ]
 )
 
