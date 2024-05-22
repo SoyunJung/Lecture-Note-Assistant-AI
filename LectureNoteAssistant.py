@@ -391,7 +391,7 @@ def main(): # Select a muted green color
 
     with gr.Blocks(theme=custom_theme) as web:
         with gr.Row():
-            gr.Markdown("# Lecture Note Assistant AI\n# Im-pAIr")
+            gr.Markdown("# Lecture Note Assistant AI\n# Im-pAIred")
             openai_api_key = gr.Textbox(label="OpenAI API Key")
             ocr_api_key = gr.Textbox(label="OCR API Key")
 
