@@ -24,7 +24,7 @@ if not os.path.exists(upload_dir):
 
 # OpenAI의 Whisper API를 사용하여 Speech가 담긴 mp3파일을 text로 변환하는 함수
 # audio_file: 오디오 파일 경로, openai_api_key: OpenAI API 키
-def speech_to_text(audio_file, openai_api_key): # 변환된 텍스트 string을 묶은 raw_transcript 튜플을 return함
+def speech_to_text(audio_file, openai_api_key, use_stt_eng): # 변환된 텍스트 string을 묶은 raw_transcript 튜플을 return함
 
     STT_API_KEY = openai_api_key
     client = OpenAI(api_key=STT_API_KEY)
@@ -53,13 +53,15 @@ def speech_to_text(audio_file, openai_api_key): # 변환된 텍스트 string을 
         pass
 
     # Whisper API로 분할된 파일들 처리
+    language_select = "en" if use_stt_eng else "ko"
+
     for segment_path in segments:
         with open(segment_path, "rb") as audio_file:
             try:
                 response = client.audio.transcriptions.create(
                     file=audio_file,
                     model="whisper-1",
-                    language="ko",
+                    language=language_select,
                     response_format="text",
                 )
                 # 응답 확인
@@ -376,11 +378,20 @@ def pdf_length(pdf_path):# pdf 경로 입력 시 페이지 수를 반환
 
 
 
-def main():
+def main(): # Select a muted green color
+    button_color = "#4caf50"
+    selected_tab_color = "#66bb6a"
+    custom_theme = gr.themes.Default(
+        primary_hue=gr.themes.colors.green,
+    ).set(
+        button_primary_background_fill=button_color,
+        button_primary_background_fill_hover=button_color,
+        button_primary_text_color="white",
+    )
 
-    with gr.Blocks() as web:
+    with gr.Blocks(theme=custom_theme) as web:
         with gr.Row():
-            gr.Markdown("# Lecture Note Assistant AI")
+            gr.Markdown("# Lecture Note Assistant AI\n# Im-pAIr")
             openai_api_key = gr.Textbox(label="OpenAI API Key")
             ocr_api_key = gr.Textbox(label="OCR API Key")
 
@@ -393,66 +404,222 @@ def main():
                         pdf_file = gr.File(label="강의 자료 PDF 업로드", file_types=[".pdf"])
                         pdf_file.upload(fn=update_uploaded_file, inputs=pdf_file, outputs=None)
                         use_ocr = gr.Checkbox(label="OCR 사용 (이미지 기반 PDF인 경우 권장)")
-                        submit_btn = gr.Button("제출")
+                        use_stt_eng = gr.Checkbox(label="영어 강의라면 체크")
+                        submit_btn = gr.Button("1. 제출", variant="primary")
                         
 
                     with gr.Column():
                         tabs_inner = gr.Tabs()
                         with tabs_inner:
                             with gr.TabItem("Whisper STT 결과"):
-                                stt_textbox = gr.Textbox(label="STT 결과")
-                                next_btn1 = gr.Button("다음 단계")
+                                stt_textbox = gr.Textbox(label="STT 결과", max_lines=15)
+                                next_btn1 = gr.Button("2. 다음 단계", variant="primary")
 
                             with gr.TabItem("NLP 가독성 처리 결과"):
-                                stt_claude_textbox = gr.Textbox(label="가독성 처리 결과")
-                                next_btn2 = gr.Button("다음 단계")
+                                stt_claude_textbox = gr.Textbox(label="가독성 처리 결과", max_lines=15)
+                                next_btn2 = gr.Button("3. 다음 단계", variant="primary")
 
                             with gr.TabItem("PDF 매칭 결과"):
+                                download_lecture_txt = gr.Checkbox(label="강의록.txt")
+                                download_refined_txt = gr.Checkbox(label="다듬은 강의록.txt")
+                                download_matched_txt = gr.Checkbox(label="문단과 매칭된 강의록.txt")
+                                download_btn = gr.Button("다운로드", variant="primary")
                                 matching_results = gr.Group()
                                 images, textboxes = [], []
                                 for i in range(50): #임의로50
                                     with gr.Row():
                                         img = gr.Image(label=f"{i+1}번째 페이지", interactive=False)
-                                        txt = gr.Textbox(label=f"{i+1}번째 페이지 텍스트")
+                                        txt = gr.Textbox(label=f"{i+1}번째 페이지 텍스트", max_lines=5)
                                         images.append(img)
                                         textboxes.append(txt)
                                         img
                                         txt
-                                download_lecture_txt = gr.Checkbox(label="강의록.txt")
-                                download_refined_txt = gr.Checkbox(label="다듬은 강의록.txt")
-                                download_matched_txt = gr.Checkbox(label="문단과 매칭된 강의록.txt")
-                                download_btn = gr.Button("다운로드")
                 
                 matched_text = gr.State()
                 stt_result = gr.State()
                 claude_output = gr.State()
 
 
-                submit_btn.click(fn= speech_to_text, inputs=[audio_file, openai_api_key], outputs=[stt_result, stt_textbox])
+                submit_btn.click(fn= speech_to_text, inputs=[audio_file, openai_api_key, use_stt_eng], outputs=[stt_result, stt_textbox])
                 next_btn1.click(fn= refine_transcript_wrapper, inputs=[stt_result, pdf_file, use_ocr, openai_api_key, ocr_api_key], outputs=[stt_claude_textbox, claude_output])
                 next_btn2.click(fn= match_only, inputs=[claude_output, pdf_file, use_ocr, openai_api_key, ocr_api_key], outputs=images + textboxes + [matched_text])
                 download_btn.click(fn= download_files, inputs=[download_lecture_txt, download_refined_txt, download_matched_txt, stt_textbox, claude_output, matched_text], outputs=gr.File(label="다운로드된 파일"))
 
-            #only_tab 가져와서 붙여넣기
+            # only STT
+            with gr.TabItem("only STT"):
+                with gr.Row():
+                    with gr.Column():
+                        audio_file = gr.Audio(label="강의 녹음 파일 업로드", type="filepath")
+                        use_stt_eng = gr.Checkbox(label="영어 강의라면 체크")
+                        stt_btn = gr.Button("STT 수행", variant="primary")                        
+
+                    with gr.Column():
+                        only_stt_textbox = gr.Textbox(label="STT 결과", max_lines=15)
+                        download_stt_txt = gr.Checkbox(label="STT 결과.txt")
+                        download_stt_btn = gr.Button("다운로드", variant="primary")
+
+                only_stt_output = gr.State()
+                
+                def download_files_only_stt(check, refined_ocr_output):
+                    files = []
+                    if check:
+                        refined_ocr_path = save_text_file(refined_ocr_output, "STT 결과.txt")
+                        files.append(refined_ocr_path)
+                    return files
+
+                stt_btn.click(fn= speech_to_text, inputs=[audio_file, openai_api_key, use_stt_eng], outputs=[only_stt_output, only_stt_textbox]) 
+                download_stt_btn.click(fn=download_files_only_stt, inputs=[download_stt_txt, only_stt_output], outputs=gr.File(label="다운로드된 파일"))
+            
+            # Only OCR  
+            with gr.TabItem("only OCR"):
+                with gr.Row():
+                    with gr.Column():
+                        pdf_file_only_ocr = gr.File(label="PDF 파일 업로드", file_types=[".pdf"])
+                        ocr_btn = gr.Button("OCR 수행", variant="primary")
+
+                    with gr.Column():
+                        only_ocr_textbox = gr.Textbox(label="OCR 결과", max_lines=15)
+                        download_ocr_txt = gr.Checkbox(label="OCR 결과.txt")
+                        download_ocr_btn = gr.Button("다운로드", variant="primary")
+
+                refined_ocr_output = gr.State()
+
+                def only_ocr_refine(pdf_file, api_key):
+                    only_ocr_result = ocr_slide_text(pdf_file, api_key)
+                    total_pages = only_ocr_result[0]
+                    content = only_ocr_result[1]
+                    formatted_content = []
+                    
+                    for page_num, page_content in content.items():
+                        formatted_page_content = page_content.replace('\n', ' ')
+                        formatted_content.append(f"('{page_num}'페이지) {formatted_page_content}")
+                    
+                    result = f"전체 페이지수 : {total_pages}\n\n" + "\n\n".join(formatted_content)
+                    return result, result
+                
+                def download_files_only_ocr(check, refined_ocr_output):
+                    files = []
+                    if check:
+                        refined_ocr_path = save_text_file(refined_ocr_output, "OCR 결과.txt")
+                        files.append(refined_ocr_path)
+                    return files
+
+                ocr_btn.click(fn=only_ocr_refine, inputs=[pdf_file_only_ocr, ocr_api_key], outputs=[refined_ocr_output, only_ocr_textbox]) 
+                download_ocr_btn.click(fn=download_files_only_ocr, inputs=[download_ocr_txt, refined_ocr_output], outputs=gr.File(label="다운로드된 파일"))
+                
+            # Only refine
+            with gr.TabItem("only 다듬기"):
+                with gr.Row():
+                    with gr.Column():
+                        raw_transcript_file = gr.File(label="STT된 raw 강의록 txt 파일 업로드", file_types=[".txt"])
+                        pdf_file_refine = gr.File(label="교재 PDF 파일 업로드", file_types=[".pdf"])
+                        use_ocr_refine = gr.Checkbox(label="OCR 사용 (이미지 기반 PDF인 경우 권장)")
+                        refine_btn = gr.Button("NLP 가독성 향상 수행", variant="primary")
+                    
+                    with gr.Column():
+                        refine_textbox = gr.Textbox(label="가독성 처리 결과", max_lines=15)
+                        download_refine_txt = gr.Checkbox(label="다듬은 강의록.txt")
+                        download_refine_btn = gr.Button("다운로드", variant="primary")
+                
+                refined_text_output = gr.State()
+
+                def load_raw_transcript(file):
+                    if file is not None:
+                        with open(file.name, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        return content
+                    return ""
+
+                def refine_transcript_file(raw_transcript_file, pdf_file_refine, use_ocr_refine, openai_api_key, ocr_api_key):
+                    raw_transcript_content = load_raw_transcript(raw_transcript_file)
+                    raw_transcript_tuple = tuple(raw_transcript_content.split('\n\n'))
+                    result, refined_transcript = refine_transcript_wrapper(raw_transcript_tuple, pdf_file_refine, use_ocr_refine, openai_api_key, ocr_api_key)
+                    return result, refined_transcript
+
+                refine_btn.click(fn=refine_transcript_file, inputs=[raw_transcript_file, pdf_file_refine, use_ocr_refine, openai_api_key, ocr_api_key], outputs=[refine_textbox, refined_text_output])
+
+                def download_files_only_refine(check, refined_text_output):
+                    files = []
+                    if check:
+                        refined_path = save_text_file(refined_text_output, "다듬은 강의록.txt")
+                        files.append(refined_path)
+                    return files
+
+                download_refine_btn.click(fn=download_files_only_refine, inputs=[download_refine_txt, refined_text_output], outputs=gr.File(label="다운로드된 파일"))
+
+            # Only match
+            with gr.TabItem("only 매칭"):
+                with gr.Row():
+                    with gr.Column():
+                        refined_transcript_file = gr.File(label="다듬어진 강의록 txt 파일 업로드", file_types=[".txt"])
+                        pdf_file_match = gr.File(label="교재 PDF 파일 업로드", file_types=[".pdf"])
+                        use_ocr_match = gr.Checkbox(label="OCR 사용 (이미지 기반 PDF인 경우 권장)")
+                        match_btn = gr.Button("NLP 문단 매칭 수행", variant="primary")
+                    
+                    with gr.Column():
+                        download_match_txt = gr.Checkbox(label="문단과 매칭된 강의록.txt")
+                        download_match_btn = gr.Button("다운로드", variant="primary")
+                        matching_results = gr.Group()
+                        images, textboxes = [], []
+                        for i in range(50): #임의로50
+                            with gr.Row():
+                                img = gr.Image(label=f"{i+1}번째 페이지", interactive=False)
+                                txt = gr.Textbox(label=f"{i+1}번째 페이지 텍스트", max_lines=5)
+                                images.append(img)
+                                textboxes.append(txt)
+                                img
+                                txt
+                
+                matched_text_output = gr.State()
+
+                def load_refined_transcript(file):
+                    if file is not None:
+                        with open(file.name, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        return content
+                    return ""
+
+                def match_transcript_file(refined_transcript_file, pdf_file_match, use_ocr_match, openai_api_key, ocr_api_key):
+                    refined_transcript_content = load_refined_transcript(refined_transcript_file)
+                    refined_transcript_tuple = tuple(refined_transcript_content.split('\n\n'))
+                    result = match_only(refined_transcript_tuple, pdf_file_match, use_ocr_match, openai_api_key, ocr_api_key)
+                    return result
+
+                match_btn.click(fn=match_transcript_file, inputs=[refined_transcript_file, pdf_file_match, use_ocr_match, openai_api_key, ocr_api_key], outputs=images + textboxes + [matched_text_output])
+
+                def download_files_only_match(check, matched_text_output):
+                    files = []
+                    if check:
+                        matched_path = save_text_file(matched_text_output, "문단과 매칭된 강의록.txt")
+                        files.append(matched_path)
+                    return files
+
+                download_match_btn.click(fn=download_files_only_match, inputs=[download_match_txt, matched_text_output], outputs=gr.File(label="다운로드된 파일"))
+
+
 
         gr.Markdown(
-            """
-            ### 사용 방법
-            1. 좌측에 강의녹음 mp3 파일과 교재 pdf 파일을 업로드합니다.
-            2. OCR 사용 여부를 선택합니다. (이미지 기반 pdf인 경우 권장합니다.)
-            3. '제출' 버튼을 클릭하여 강의 노트 생성을 시작합니다.
-            4. 생성된 강의 노트 결과가 오른쪽 탭에 단계별로 표시됩니다.
-               **각 단계가 완료되면 '다음 단계' 버튼을 누르고 다음 탭을 클릭하면 됩니다.**
-               - 1단계: Whisper STT 결과: mp3에 담긴 발화를 txt로 변환한 결과
-               - 2단계: NLP 가독성 처리 결과: 1단계에서 얻은 txt의 오류를 고치고 가독성을 높인 강의록txt 결과
-               - 3단계: PDF 매칭 결과: 2단계에서 얻은 강의록을 해당하는 pdf 페이지와 함께 보여주는 결과
-            5. '다운로드' 버튼을 클릭하여 선택한 단계의 강의 노트를 다운로드할 수 있습니다.
-            """
-            # - **모든 작업 수행**: 강의녹음 mp3 파일과 교재 pdf 파일을 업로드하여 모든 단계의 작업을 수행합니다.
-            # - **only STT**: 강의녹음 mp3 파일을 업로드하여 STT(음성인식) 작업을 수행합니다.
-            # - **only 다듬기**: STT된 raw 강의록 txt 파일을 업로드하여 가독성을 높이는 작업을 수행합니다.
-            # - **only 매칭**: 다듬어진 강의록 txt 파일과 교재 pdf 파일을 업로드하여 문단 매칭을 수행합니다.
+        """
+        ### 사용 방법
+        1. 좌측에 강의녹음 mp3 파일과 교재 pdf 파일을 업로드합니다.
+        2. OCR 사용 여부를 선택합니다. (이미지 기반 pdf인 경우 권장합니다.)
+        3. '제출' 버튼을 클릭하여 강의 노트 생성을 시작합니다.
+        4. 생성된 강의 노트 결과가 오른쪽 탭에 단계별로 표시됩니다.
+            **각 단계가 완료되면 '다음 단계' 버튼을 누르고 다음 탭을 클릭하면 됩니다.**
+            - 1단계: Whisper STT 결과: mp3에 담긴 발화를 txt로 변환한 결과
+            - 2단계: NLP 가독성 처리 결과: 1단계에서 얻은 txt의 오류를 고치고 가독성을 높인 강의록txt 결과
+            - 3단계: PDF 매칭 결과: 2단계에서 얻은 강의록을 해당하는 pdf 페이지와 함께 보여주는 결과
+        5. '다운로드' 버튼을 클릭하여 선택한 단계의 강의 노트를 다운로드할 수 있습니다.
+
+        - **모든 작업 수행**: 강의녹음 mp3 파일과 교재 pdf 파일을 업로드하여 모든 단계의 작업을 수행합니다.
+        - **only STT**: 강의녹음 mp3 파일을 업로드하여 STT(음성인식) 작업을 수행합니다.
+        - **only OCR**: 교재 pdf 파일을 업로드하여 OCR 작업을 수행합니다.
+        - **only 다듬기**: STT된 raw 강의록 txt 파일을 업로드하여 가독성을 높이는 작업을 수행합니다.
+        - **only 매칭**: 다듬어진 강의록 txt 파일과 교재 pdf 파일을 업로드하여 문단 매칭을 수행합니다.
+
+        """
         )
+
     
     web.launch()
 
